@@ -1,3 +1,4 @@
+
 # app.py — Streamlit AI Text-to-Image Web Application (FIXED)
 
 import os
@@ -125,7 +126,7 @@ with col2:
                     if negative_prompt.strip():
                         api_params["negative_prompt"] = negative_prompt.strip()
 
-                    # Only pass guidance_scale & steps for models that support them
+                    # Pass steps and guidance_scale where supported
                     if "FLUX" not in model_choice:
                         api_params["num_inference_steps"] = steps
                         api_params["guidance_scale"] = guidance_scale
@@ -135,11 +136,11 @@ with col2:
 
                     elapsed = time.time() - start_time
 
-                    # Display Generated Image
+                    # Display Generated Image (Fixed parameter here)
                     st.image(
                         image,
                         caption=f"Generated in {elapsed:.2f}s | Model: {model_choice.split('/')[-1]}",
-                        use_column_width=True
+                        use_container_width=True
                     )
 
                     # Prepare Image for Download
@@ -166,5 +167,3 @@ with col2:
                         st.info("💡 **Authentication Required:** Please enter a valid free Hugging Face API Token (starting with `hf_...`) in the sidebar or Streamlit Secrets.")
                     elif "503" in error_msg or "loading" in error_msg.lower():
                         st.info("💡 **Model Loading:** The Hugging Face server is warming up this model. Wait 15–20 seconds and click Generate again.")
-                    elif "500" in error_msg or "Model" in error_msg:
-                        st.info("💡 **Model Switch:** Try selecting `black-forest-labs/FLUX.1-schnell` from the model dropdown in the sidebar.")
