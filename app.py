@@ -1,4 +1,4 @@
-# app.py — Streamlit AI Text-to-Image Web Application
+# app.py — Streamlit AI Text-to-Image Web Application (FIXED)
 
 import os
 import io
@@ -43,43 +43,35 @@ st.caption("Generate high-quality artwork from text prompts using Hugging Face A
 # ------------------------------------------------------------------------------
 st.sidebar.header("⚙️ Generation Settings")
 
-# Model Selection
+# Model Selection - Using models fully supported on HF Serverless API
 model_choice = st.sidebar.selectbox(
     "Select AI Model",
     options=[
-        "SimianLuo/LCM_Dreamshaper_v7",
+        "black-forest-labs/FLUX.1-schnell",
         "stable-diffusion-v1-5/stable-diffusion-v1-5",
         "prompthero/openjourney-v4"
     ],
     index=0,
-    help="LCM Dreamshaper generates images in ~1-2 seconds (4 steps). SD v1.5 provides traditional diffusion detail."
+    help="FLUX.1-schnell provides fast, ultra-realistic generation. SD v1.5 is the classic stable diffusion model."
 )
 
 # API Token Handling (Supports Streamlit Secrets & Environment Variables)
 default_token = st.secrets.get("HF_TOKEN", os.getenv("HF_TOKEN", ""))
 hf_token = st.sidebar.text_input(
-    "Hugging Face Token (Optional)",
+    "Hugging Face Token",
     value=default_token,
     type="password",
-    help="Optional for public models. Enter your token if you hit rate limits."
+    help="Enter your free Hugging Face API token (hf_...) from huggingface.co/settings/tokens"
 )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Advanced Parameters")
 
-# Dynamic step defaults based on model selection
-default_steps = 4 if "LCM" in model_choice else 25
-steps = st.sidebar.slider("Inference Steps", min_value=1, max_value=50, value=default_steps)
-guidance_scale = st.sidebar.slider("Guidance Scale (CFG)", min_value=1.0, max_value=20.0, value=8.0, step=0.5)
+steps = st.sidebar.slider("Inference Steps", min_value=1, max_value=50, value=25)
+guidance_scale = st.sidebar.slider("Guidance Scale (CFG)", min_value=1.0, max_value=20.0, value=7.5, step=0.5)
 
-width = st.sidebar.selectbox("Width", options=[512, 768], index=0)
-height = st.sidebar.selectbox("Height", options=[512, 768], index=0)
-
-use_random_seed = st.sidebar.checkbox("Randomize Seed", value=True)
-if not use_random_seed:
-    seed = st.sidebar.number_input("Seed Value", min_value=0, max_value=2147483647, value=42)
-else:
-    seed = None
+width = st.sidebar.selectbox("Width", options=[512, 768, 1024], index=0)
+height = st.sidebar.selectbox("Height", options=[512, 768, 1024], index=0)
 
 # ------------------------------------------------------------------------------
 # MAIN APP LAYOUT
@@ -115,22 +107,31 @@ with col2:
                 try:
                     start_time = time.time()
 
+                    token_to_use = hf_token.strip() if hf_token and hf_token.strip() else None
+
                     # Initialize HF Inference Client
                     client = InferenceClient(
-                        token=hf_token if hf_token.strip() else None
+                        token=token_to_use
                     )
 
-                    # Execute Serverless API Request
-                    image = client.text_to_image(
-                        prompt=prompt,
-                        negative_prompt=negative_prompt if negative_prompt.strip() else None,
-                        model=model_choice,
-                        height=height,
-                        width=width,
-                        num_inference_steps=steps,
-                        guidance_scale=guidance_scale,
-                        seed=seed
-                    )
+                    # Build API parameters dynamically
+                    api_params = {
+                        "prompt": prompt,
+                        "model": model_choice,
+                        "height": height,
+                        "width": width,
+                    }
+
+                    if negative_prompt.strip():
+                        api_params["negative_prompt"] = negative_prompt.strip()
+
+                    # Only pass guidance_scale & steps for models that support them
+                    if "FLUX" not in model_choice:
+                        api_params["num_inference_steps"] = steps
+                        api_params["guidance_scale"] = guidance_scale
+
+                    # Call Serverless Text-to-Image API
+                    image = client.text_to_image(**api_params)
 
                     elapsed = time.time() - start_time
 
@@ -157,11 +158,13 @@ with col2:
 
                 except Exception as e:
                     st.error("❌ Generation Failed")
-                    error_str = str(e)
+                    error_msg = str(e) if str(e) else repr(e)
 
-                    if "503" in error_str or "loading" in error_str.lower():
-                        st.info("💡 **Model Booting:** The model is warming up on Hugging Face servers. Please wait 15–20 seconds and click Generate again.")
-                    elif "401" in error_str or "token" in error_str.lower():
-                        st.info("💡 **Token Error:** Please enter a valid free Hugging Face API token in the sidebar.")
-                    else:
-                        st.error(f"Error details: {error_str}")
+                    st.error(f"**Error Details:** {error_msg}")
+
+                    if "401" in error_msg or "token" in error_msg.lower() or "authorization" in error_msg.lower():
+                        st.info("💡 **Authentication Required:** Please enter a valid free Hugging Face API Token (starting with `hf_...`) in the sidebar or Streamlit Secrets.")
+                    elif "503" in error_msg or "loading" in error_msg.lower():
+                        st.info("💡 **Model Loading:** The Hugging Face server is warming up this model. Wait 15–20 seconds and click Generate again.")
+                    elif "500" in error_msg or "Model" in error_msg:
+                        st.info("💡 **Model Switch:** Try selecting `black-forest-labs/FLUX.1-schnell` from the model dropdown in the sidebar.")
